@@ -2,8 +2,8 @@ name: Gold Eye AI
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 已改为每15分钟运行一次
-  workflow_dispatch:      # 允许你手动点击测试
+    - cron: '*/20 * * * *'  # 调整为20分钟一次，给数据接口喘息时间
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,7 +19,8 @@ jobs:
         python-version: '3.9'
         
     - name: Install dependencies
-      run: pip install requests feedparser
+      # 🔥 核心升级：增加了 yfinance 库，用来抓取实时行情
+      run: pip install requests feedparser yfinance
       
     - name: Run Gold Eye
       env: 
