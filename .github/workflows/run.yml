@@ -1,0 +1,28 @@
+name: Gold Eye AI
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # 每30分钟运行一次
+  workflow_dispatch:      # 允许手动测试
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: pip install requests feedparser
+      
+    - name: Run Gold Eye
+      env: 
+        PUSH_TOKEN: ${{ secrets.PUSH_TOKEN }}
+        DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_KEY }}
+      run: python main.py
