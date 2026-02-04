@@ -2,8 +2,8 @@ name: Gold Eye AI
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 每30分钟运行一次
-  workflow_dispatch:      # 允许手动测试
+    - cron: '*/15 * * * *'  # 已改为每15分钟运行一次
+  workflow_dispatch:      # 允许你手动点击测试
 
 jobs:
   build:
