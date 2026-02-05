@@ -2,12 +2,16 @@ name: Gold Eye AI
 
 on:
   schedule:
-    - cron: '*/20 * * * *'  # 调整为20分钟一次，给数据接口喘息时间
+    - cron: '*/30 * * * *'  # 每30分钟运行
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # 🔥 关键权限：允许机器人修改代码库
+    permissions:
+      contents: write
     
     steps:
     - name: Checkout code
@@ -19,11 +23,20 @@ jobs:
         python-version: '3.9'
         
     - name: Install dependencies
-      # 🔥 核心升级：增加了 yfinance 库，用来抓取实时行情
-      run: pip install requests feedparser yfinance
+      run: pip install requests feedparser
       
-    - name: Run Gold Eye
+    - name: Run Gold Eye & Record Stats
       env: 
         PUSH_TOKEN: ${{ secrets.PUSH_TOKEN }}
         DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_KEY }}
       run: python main.py
+      
+    # 🔥 核心黑科技：把新账本“自动提交”回 GitHub
+    - name: Commit and Push Ledger
+      run: |
+        git config --global user.name "GoldEyeBot"
+        git config --global user.email "bot@goldeye.ai"
+        git add trade_history.json
+        # 只有当文件有变化时才提交，防止报错
+        git commit -m "📈 Update trade ledger [skip ci]" || echo "No changes to commit"
+        git push
