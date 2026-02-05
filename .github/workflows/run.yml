@@ -2,7 +2,7 @@ name: Gold Eye AI
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 每15分钟运行一次 (国际标准频率)
+    - cron: '*/15 * * * *'  # 每15分钟运行一次
   workflow_dispatch:      # 允许手动点击测试
 
 jobs:
@@ -19,8 +19,7 @@ jobs:
         python-version: '3.9'
         
     - name: Install dependencies
-      # 这里我多装了几个库，不管你 main.py 用哪个版本都能跑，防呆设计
-      run: pip install requests feedparser yfinance
+      run: pip install requests feedparser
       
     - name: Run Gold Eye
       env: 
