@@ -2,191 +2,128 @@ import requests
 import feedparser
 import os
 import re
-import time
 from datetime import datetime, timedelta
+from openai import OpenAI
 
 # ---------------- 配置区 ----------------
 PUSH_TOKEN = os.environ.get("PUSH_TOKEN")
-DEEPSEEK_KEY = os.environ.get("DEEPSEEK_KEY")
-# 依然用 CNBC 源，资讯最快
-RSS_URL = "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069"
+KIMI_KEY = os.environ.get("KIMI_KEY")
+
+# 监控全球核心政经源
+SOURCES = {
+    "路透政经": "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
+    "WSJ商业": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+    "CNBC财经": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069",
+    "华尔街见闻": "https://wallstreetcn.com/rss/news" # 如果RSS失效可替换为其他源
+}
 # ---------------------------------------
 
-def get_beijing_time():
-    return datetime.utcnow() + timedelta(hours=8)
+def get_global_intelligence():
+    """搜罗所有核心源，提取前 3 条最重磅的新闻"""
+    print("📡 正在扫描全球政经雷达...")
+    intel_pool = []
+    for name, url in SOURCES.items():
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:3]:
+                intel_pool.append(f"【{name}】{entry.title}")
+        except:
+            continue
+    return "\n".join(intel_pool)
 
-def get_sina_gold_price():
-    """
-    🔥 工业级数据源：新浪财经底层数据 (hf_XAU)
-    稳、快、准，包含人民币汇率换算
-    """
-    print("🚀 正在接入新浪底层数据链...")
-    headers = {"Referer": "https://finance.sina.com.cn/"}
+def call_kimi_intelligence_center(intel_blob, market):
+    """Kimi 负责将杂乱的新闻串联成“股市+黄金”的影响力地图"""
+    client = OpenAI(api_key=KIMI_KEY, base_url="https://api.moonshot.cn/v1")
     
-    try:
-        # hf_XAU: 伦敦金现货, fx_susdcny: 离岸汇率
-        url = "http://hq.sinajs.cn/list=hf_XAU,fx_susdcny"
-        resp = requests.get(url, headers=headers, timeout=5)
-        content = resp.text
-        
-        # 1. 解析金价
-        match_gold = re.search(r'hq_str_hf_XAU="([^"]+)"', content)
-        if not match_gold: return None
-        gold_arr = match_gold.group(1).split(',')
-        price_usd = float(gold_arr[0])
-        prev_close = float(gold_arr[7])
-        
-        # 2. 解析汇率
-        match_rate = re.search(r'hq_str_fx_susdcny="([^"]+)"', content)
-        rate_cny = 7.28 # 默认兜底
-        if match_rate:
-            rate_arr = match_rate.group(1).split(',')
-            rate_cny = float(rate_arr[1])
-
-        # 3. 核心计算
-        price_cny = (price_usd * rate_cny) / 31.1035
-        change_pct = (price_usd - prev_close) / prev_close * 100
-        
-        # 4. 模拟成交量状态 (根据波动率反推，为了还原研报风格)
-        vol_status = "缩量盘整"
-        if abs(change_pct) > 1.0: vol_status = "极端放量 🔥"
-        elif abs(change_pct) > 0.5: vol_status = "温和放量"
-
-        return {
-            "price_usd": round(price_usd, 2),
-            "price_cny": round(price_cny, 2),
-            "rate_cny": round(rate_cny, 4),
-            "change_pct": round(change_pct, 2),
-            "vol_status": vol_status
-        }
-    except Exception as e:
-        print(f"❌ 数据源波动: {e}")
-        return None
-
-def call_deepseek_research(news_title, market):
-    print(f"⚡ 呼叫 DeepSeek 生成“口罩哥”风格研报...")
-    url = "https://api.deepseek.com/chat/completions"
-    
-    # 🔥 核心 Prompt：强制模仿图片风格，杜绝废话
     prompt = f"""
-    你现在是全网粉丝百万的黄金分析师。请复刻“专业研报”风格。
+    你现在是顶级国际智库分析师。请根据以下搜罗到的政经情报，为投资者写一份决策参考。
     
-    【当前盘面】:
-    - 价格: ¥{market['price_cny']}/克 (国际 ${market['price_usd']})
-    - 涨跌: {market['change_pct']}% ({market['vol_status']})
-    - 突发新闻: "{news_title}"
+    【盘面参考】: 黄金 ¥{market['price_cny']} ({market['change_pct']}%)
+    【搜罗到的原始情报】:
+    {intel_blob}
     
-    请直接输出分析内容，格式必须严格如下（不要有开场白）：
+    请按此格式输出（禁止废话）：
 
-    核心驱动因素：
-    1. [因素1] (结合新闻事件/地缘局势，简练毒辣)
-    2. [因素2] (结合美元DXY或美债收益率)
-    3. [因素3] (结合央行购金或市场情绪)
+    🌍 全球政经核心变数：
+    1. [政治/战争/政策] -> 核心逻辑及对市场的直接冲击。
+    2. [经济数据/货币政策] -> 核心逻辑及对市场的直接冲击。
     
-    结论与点位：
-    [一句话看涨/看跌]，支撑参考 ¥{int(market['price_cny']-2)}，压力 ¥{int(market['price_cny']+2)}。
+    📈 股市/黄金联动导向：
+    - 股市：[看多/看空理由及避险情绪走向]
+    - 黄金：[受哪些政经变数支撑或压制]
+    
+    决策结论：
+    [一句话总结当前的盘面定调]
     """
     
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.4
-    }
-    
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {DEEPSEEK_KEY}"
-    }
-    
     try:
-        response = requests.post(url, json=payload, headers=headers)
-        if 'choices' in response.json():
-            return response.json()['choices'][0]['message']['content']
-        return "研报生成超时..."
-    except:
-        return "AI 分析连线中..."
+        completion = client.chat.completions.create(
+            model="moonshot-v1-8k",
+            messages=[{"role": "system", "content": "你说话风格极其冷峻、客观，只讲逻辑，不讲废话。"},
+                      {"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"智库分析中断，错误详情: {str(e)}"
 
-def send_wechat_card(title, content, market, link):
+# ---------------- 视觉模版修复 ----------------
+def send_intelligence_card(content, market):
     url = "http://www.pushplus.plus/send"
-    bj_time = get_beijing_time().strftime('%H:%M')
+    bj_time = (datetime.utcnow() + timedelta(hours=8)).strftime('%H:%M')
     
-    # 🎨 视觉复刻：
-    # 涨跌幅背景：黄色高亮 #ffeb3b (涨) 或 浅绿 (跌)
-    # 字体：黑色加粗
+    # 保持原有模版的硬核配色和结构
     bg_color = "#ffeb3b" if market['change_pct'] >= 0 else "#a5d6a7"
-    trend_sign = "+" if market['change_pct'] >= 0 else ""
-    
-    # 内容格式化
     formatted_content = content.replace("\n", "<br>")
     
     html = f"""
     <div style="font-family: Arial, sans-serif; background-color: #fdfdfd; padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 12px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 12px;">
+            <div style="font-size: 18px; font-weight: 900; color: #d32f2f;">🔥 全球政经内参</div>
+            <div style="font-size: 12px; color: #666; font-weight: bold;">{bj_time} 更新</div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
             <div>
-                <div style="font-size: 12px; color: #888;">收益价 (CNY)</div>
-                <div style="font-size: 30px; font-weight: 900; color: #333; line-height: 1.2;">
-                    ¥{market['price_cny']}
-                </div>
+                <span style="font-size: 11px; color: #888;">黄金现价</span><br>
+                <span style="font-size: 20px; font-weight: 900;">¥{market['price_cny']}</span>
             </div>
-            <div style="text-align: right;">
-                <div style="font-size: 12px; color: #888;">日内涨幅</div>
-                <div style="background-color: {bg_color}; color: #000; padding: 4px 10px; border-radius: 4px; font-weight: 800; font-size: 18px;">
-                    {trend_sign}{market['change_pct']}%
-                </div>
+            <div style="background-color: {bg_color}; padding: 4px 10px; border-radius: 4px; font-weight: 800;">
+                {market['change_pct']}%
             </div>
         </div>
 
-        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666; background: #f9f9f9; padding: 8px; border-radius: 4px; margin-bottom: 15px;">
-            <span>国际: <b>${market['price_usd']}</b></span>
-            <span>成交: <b>{market['vol_status']}</b></span>
-            <span>汇率: <b>{market['rate_cny']}</b></span>
+        <div style="font-size: 14px; line-height: 1.7; color: #222;">
+            {formatted_content}
         </div>
 
-        <div style="padding: 10px 0;">
-            <div style="font-weight: bold; font-size: 15px; color: #333; margin-bottom: 8px;">🔥 核心驱动因素：</div>
-            <div style="font-size: 14px; line-height: 1.6; color: #444; background: #fff; padding: 10px; border-left: 4px solid #fbc02d;">
-                {formatted_content}
-            </div>
+        <div style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 11px; color: #999; text-align: center;">
+            情报源：Reuters | WSJ | CNBC | Kimi Intelligence
         </div>
-
-        <br>
-        <div style="text-align: right; font-size: 12px; color: #aaa;">
-            北京时间 {bj_time} | 研报生成
-        </div>
-        
-        <a href="{link}" style="display: block; margin-top: 15px; text-align: center; background-color: #222; color: #fff; padding: 10px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold;">
-            查看 K 线图
-        </a>
     </div>
     """
     
-    push_title = f"¥{market['price_cny']} ({trend_sign}{market['change_pct']}%) 研报出炉"
-    requests.post(url, json={"token": PUSH_TOKEN, "title": push_title, "content": html, "template": "html"})
+    requests.post(url, json={
+        "token": PUSH_TOKEN, 
+        "title": f"【政经内参】{market['price_cny']} 金价波动中", 
+        "content": html, 
+        "template": "html"
+    })
 
 def run_task():
-    print("🚀 启动“口罩哥”研报引擎 (修复版)...")
-    
-    # 1. 拿数据 (新浪源，绝对稳)
+    # 1. 抓金价（作为市场锚点，函数逻辑同前）
     market = get_sina_gold_price()
+    if not market: return
     
-    if not market:
-        print("❌ 网络依然不通，请检查 GitHub 服务状态")
-        return
-
-    try:
-        feed = feedparser.parse(RSS_URL)
-        if len(feed.entries) > 0:
-            entry = feed.entries[0]
-            print(f"📰 新闻: {entry.title}")
-            
-            # 调试模式开启，保证现在就能收到
-            ai_res = call_deepseek_research(entry.title, market)
-            send_wechat_card(entry.title, ai_res, market, entry.link)
-            print("✅ 推送成功！")
-        else:
-            print("📭 暂无新闻")
-    except Exception as e:
-        print(f"❌ 运行报错: {e}")
+    # 2. 搜罗情报
+    intel_blob = get_global_intelligence()
+    
+    # 3. Kimi 汇总分析
+    final_report = call_kimi_intelligence_center(intel_blob, market)
+    
+    # 4. 推送
+    send_intelligence_card(final_report, market)
+    print("✅ 全球政经内参已送达！")
 
 if __name__ == "__main__":
     run_task()
